@@ -1,0 +1,45 @@
+#! /usr/bin/python
+
+'''
+command <branch> <search>
+'''
+
+import sys
+from subprocess import call
+from subprocess import Popen
+from subprocess import PIPE
+
+usage="That is not how you use this"
+
+if (len(sys.argv) < 3):
+    exit(usage)
+
+commits=Popen("git log --grep="+sys.argv[1], stdout=PIPE, shell=True).stdout.readlines()
+
+commit_array=[]
+
+for i in commits:
+    if (i.startswith("commit")):
+        sha=(i.split(" ")[1]).strip()
+        desc=''
+    elif (i.startswith("Author")):
+        continue
+    elif (i.startswith("Date")):
+        continue
+    else:
+        desc+=i.strip()
+        if (desc.startswith(sys.argv[1])):
+            commit_array.append([sha, desc])
+
+for i in commit_array:
+    cherry = raw_input("cherry-pick "+i[1]+"? (Y/n)").upper()
+    if (cherry == ''):
+        cherry='Y'
+
+    if (cherry == 'Y'):
+        pick=Popen("git cherry-pick "+i[0], stdout=PIPE, shell=True).stdout.read()
+        print(pick)
+
+
+
+
