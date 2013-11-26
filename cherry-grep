@@ -1,45 +1,184 @@
 #! /usr/bin/python
 
 '''
-command <branch> <search>
+Author: Cody Gustafson
+Date:   11/2013
+
+Description:
+Command line utility to easily cherry-pick across branches.
 '''
 
+import subprocess
 import sys
-from subprocess import call
-from subprocess import Popen
-from subprocess import PIPE
 
-usage="That is not how you use this"
+class GitRead:
 
-if (len(sys.argv) < 3):
-    exit(usage)
+    username=subprocess.Popen("git config user.name", stdout=subprocess.PIPE, shell=True).stdout.read().strip()
+    email=subprocess.Popen("git config user.email", stdout=subprocess.PIPE, shell=True).stdout.read().strip()
 
-commits=Popen("git log --grep="+sys.argv[1], stdout=PIPE, shell=True).stdout.readlines()
+    MAX_TRAVERSE=100
 
-commit_array=[]
+    def __init__(self, branch='master'):
+        self.commits=self.getCommits(branch)
 
-for i in commits:
-    if (i.startswith("commit")):
-        sha=(i.split(" ")[1]).strip()
-        desc=''
-    elif (i.startswith("Author")):
-        continue
-    elif (i.startswith("Date")):
-        continue
-    else:
-        desc+=i.strip()
-        if (desc.startswith(sys.argv[1])):
-            commit_array.append([sha, desc])
 
-for i in commit_array:
-    cherry = raw_input("cherry-pick "+i[1]+"? (Y/n)").upper()
-    if (cherry == ''):
-        cherry='Y'
+    def getCommits(self, branch='', end_sha=''):
+        matching_commits=subprocess.Popen("git log " + branch, stdout=subprocess.PIPE, shell=True).stdout.readlines()
+        traverse=0
+        line=0
+        commit_list=[]
 
-    if (cherry == 'Y'):
-        pick=Popen("git cherry-pick "+i[0], stdout=PIPE, shell=True).stdout.read()
-        print(pick)
 
+        while (traverse < self.MAX_TRAVERSE):
+            merge = ''
+            commit = matching_commits[line].split(" ")[1] #Sha
+
+            #Is this a Merge?
+            line+=1
+            if (matching_commits[line].startswith("Merge: ")):
+                line += 1
+                merge = matching_commits[line][7:].strip()
+
+            author=''
+            if (matching_commits[line].startswith("Author: ")):
+                author = matching_commits[line][8:].strip()
+
+            line +=1 # Date
+
+            desc = ''
+            while (line < len(matching_commits)-1 and not matching_commits[line+1].startswith("commit")):
+                line += 1
+                desc += matching_commits[line] # Desc
+            commit_list.append({'sha': commit.strip(), 'desc': desc.strip(), 'author': author, 'merge': merge})
+
+            if (line >= len(matching_commits)-1):
+                break
+            if (commit == end_sha):
+                break
+
+            line += 1
+            traverse += 1
+
+        return commit_list
+
+    def search(self, search):
+        found_list=[]
+        for i in self.commits:
+
+            #Priority 0 - Complete Match
+            if (i['desc'].startswith(search)):
+                i.update({'priority': 0})
+                found_list.append(i)
+            #Priority 1 - Match exists before last complete match
+            elif (search in i['desc']):
+                i.update({'priority': 1})
+                found_list.append(i)
+            #Priority 5 - No ':', and  you are author, and before last complete match
+            elif (':' not in i['desc'] and self.am_i_author(i)):
+                i.update({'priority': 5})
+                found_list.append(i)
+
+        remove_list=[]
+        for i in range(len(found_list)-1,-1,-1):
+            if (found_list[i]['priority'] == 0):
+                break
+            if (found_list[i]['priority'] == 1):
+                remove_list.append(i)
+            if (found_list[i]['priority'] == 5):
+                remove_list.append(i)
+
+        for i in remove_list:
+            found_list.pop(i)
+        return found_list
+
+
+
+    def am_i_author(self, commit):
+        return (self.username in commit['author'] and self.email in commit['author'])
+
+
+    def run_picking(self, search=''):
+
+        search = self.search(search)
+
+        FAIL = '\033[91m'
+        warning = '\033[93m'
+        good = '\033[92m'
+        NC = '\033[0m'
+
+
+        for i in search:
+            cherry_pick = 'N'
+
+            if (i['merge'] != ''):
+                continue
+            message=''
+            default = 'N'
+            if (i['priority'] == 0):
+                color = good
+                default = 'Y'
+            elif (i['priority'] == 1):
+                color=warning
+                message = 'WARNING: Not a complete match'
+            elif (i['priority'] == 5):
+                color = FAIL
+                message = 'WARNING: No semi-colon(:) found in this description'
+
+            print(color + i['desc'])
+            if (message):
+                print(message)
+            print(NC),
+            cherry_pick = self.get_input_bool("Would you like to cherry-pick this?", default)
+
+            i.update({'cherry_pick': cherry_pick})
+            print('')
+
+        no_trues = True
+        for i in search:
+            align_left = '{:<50}'.format
+
+            print (align_left(i['desc'])),
+            print(i['cherry_pick'])
+            if (i['cherry_pick']):
+                no_trues=False
+
+        if (no_trues):
+            print(FAIL+"No SHA's to cherry-pick... exiting"+NC)
+            exit()
+        else:
+            confirm = self.get_input_bool('Commit these cherry-picks?:', 'Y')
+
+        if (confirm):
+            print('DO IT')
+        else:
+            print('STOP')
+
+
+    def show_commits(self, search=''):
+        for i in self.search(search):
+            print(i)
+
+
+    def get_input_bool(self, message, default):
+
+        if (default == 'Y'):
+            addon = '(Y/n)'
+            other = 'N'
+        elif (default == 'N'):
+            addon = '(y/N)'
+            other = 'Y'
+
+
+        confirm = raw_input(message+' '+addon).upper().strip()[:1]
+
+        if (confirm != other):
+            confirm = default
+
+        return (confirm == 'Y')
+
+
+x=GitRead(sys.argv[1]);
+x.run_picking(sys.argv[2])
 
 
 
