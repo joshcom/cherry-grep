@@ -23,7 +23,7 @@ class GitRead:
 
 
     def getCommits(self, branch='', end_sha=''):
-        matching_commits=subprocess.Popen("git log " + branch, stdout=subprocess.PIPE, shell=True).stdout.readlines()
+        matching_commits = subprocess.Popen("git log " + branch, stdout=subprocess.PIPE, shell=True).stdout.readlines()
         traverse=0
         line=0
         commit_list=[]
@@ -64,21 +64,15 @@ class GitRead:
     def search(self, search):
         found_list=[]
         for i in self.commits:
+            priority = self.calculate_priority(i, search)
+            if priority < 0:
+                next 
 
-            #Priority 0 - Complete Match
-            if (i['desc'].startswith(search)):
-                i.update({'priority': 0})
-                found_list.append(i)
-            #Priority 1 - Match exists before last complete match
-            elif (search in i['desc']):
-                i.update({'priority': 1})
-                found_list.append(i)
-            #Priority 5 - No ':', and  you are author, and before last complete match
-            elif (':' not in i['desc'] and self.am_i_author(i)):
-                i.update({'priority': 5})
-                found_list.append(i)
+            i.update({'priority': priority})
+            found_list.append(i)
 
-        remove_list=[]
+
+        remove_list = []
         for i in range(len(found_list)-1,-1,-1):
             if (found_list[i]['priority'] == 0):
                 break
@@ -89,9 +83,25 @@ class GitRead:
 
         for i in remove_list:
             found_list.pop(i)
+
         return found_list
 
+    def calculate_priority(self, commit, search):
+        description = commit['desc']
 
+        # Priority 0 - full commit description starts a search string.
+        # String expects to be followed with a space or colon.
+        if description.startswith( "%s: " % search ) or description.startswith( "%s "  % search ):
+            return 0
+        #Priority 1 - Match exists before last complete match
+        elif search in description:
+            return 1
+        #Priority 5 - No ':', and  you are author, and before last complete match
+        elif ':' not in description and self.am_i_author(commit):
+            return 5
+        # No match.
+        else:
+            return -1
 
     def am_i_author(self, commit):
         return (self.username in commit['author'] and self.email in commit['author'])
@@ -102,23 +112,23 @@ class GitRead:
         search = self.search(search)
 
         FAIL = '\033[91m'
-        warning = '\033[93m'
-        good = '\033[92m'
+        WARNING = '\033[93m'
+        GOOD = '\033[92m'
         NC = '\033[0m'
-
 
         for i in search:
             cherry_pick = 'N'
 
             if (i['merge'] != ''):
                 continue
+
             message=''
             default = 'N'
             if (i['priority'] == 0):
-                color = good
+                color = GOOD 
                 default = 'Y'
             elif (i['priority'] == 1):
-                color=warning
+                color = WARNING
                 message = 'WARNING: Not a complete match'
             elif (i['priority'] == 5):
                 color = FAIL
@@ -179,6 +189,4 @@ class GitRead:
 
 x=GitRead(sys.argv[1]);
 x.run_picking(sys.argv[2])
-
-
 
